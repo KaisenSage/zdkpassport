@@ -57,24 +57,19 @@ export default function Home() {
       .done();
 
     setQueryUrl(url);
-    console.log(url);
-
     setRequestInProgress(true);
 
     onRequestReceived(() => {
-      console.log("QR code scanned");
       setMessage("Request received");
     });
 
     onGeneratingProof(() => {
-      console.log("Generating proof");
       setMessage("Generating proof...");
     });
 
     const proofs: ProofResult[] = [];
 
     onProofGenerated(async (proof: ProofResult) => {
-      console.log("Proof result", proof);
       proofs.push(proof);
       setMessage(`Proofs received`);
       setRequestInProgress(false);
@@ -84,27 +79,20 @@ export default function Home() {
       }
 
       try {
-        // Pass the proof you've received from the user to this function
-        // along with the scope you've used above and the function will return
-        // all the parameters needed to call the verifier contract
         const params = zkPassportRef.current.getSolidityVerifierParameters({
           proof,
           scope: "adult",
           devMode: true,
         });
 
-        // Get the details of the verifier contract: its address, its abi and the function name
-        // For now the verifier contract is only deployed on Ethereum Sepolia
         const { address, abi, functionName } =
           zkPassportRef.current.getSolidityVerifierDetails("ethereum_sepolia");
 
-        // Create a public client for sepolia
         const publicClient = createPublicClient({
           chain: sepolia,
           transport: http("https://ethereum-sepolia-rpc.publicnode.com"),
         });
 
-        // Use the public client to call the verify function of the ZKPassport verifier contract
         const contractCallResult = await publicClient.readContract({
           address,
           abi,
@@ -112,49 +100,34 @@ export default function Home() {
           args: [params],
         });
 
-        console.log("Contract call result", contractCallResult);
-        // The result is an array with the first element being a boolean indicating if the proof is valid
-        // and the second element being the unique identifier
         const isVerified = Array.isArray(contractCallResult)
           ? Boolean(contractCallResult[0])
           : false;
-        const uniqueIdentifier = Array.isArray(contractCallResult)
+        const contractUniqueIdentifier = Array.isArray(contractCallResult)
           ? String(contractCallResult[1])
           : "";
         setOnChainVerified(isVerified);
+        setUniqueIdentifier(contractUniqueIdentifier);
       } catch (error) {
         console.error("Error preparing verification:", error);
       }
     });
 
-    onResult(async ({ result, uniqueIdentifier, verified, queryResultErrors }) => {
-      console.log("Result of the query", result);
-      console.log("Query result errors", queryResultErrors);
+    // FIX: Remove unused queryResultErrors
+    onResult(async ({ result, uniqueIdentifier, verified }) => {
       setIsOver18(result?.age?.gte?.result);
       setMessage("Result received");
       setUniqueIdentifier(uniqueIdentifier || "");
       setVerified(verified);
       setRequestInProgress(false);
-
-      /*const res = await fetch("/api/register", {
-        method: "POST",
-        body: JSON.stringify({
-          queryResult: result,
-          proofs,
-        }),
-      });
-
-      console.log("Response from the server", await res.json());*/
     });
 
     onReject(() => {
-      console.log("User rejected");
       setMessage("User rejected the request");
       setRequestInProgress(false);
     });
 
-    onError((error: unknown) => {
-      console.error("Error", error);
+    onError(() => {
       setMessage("An error occurred");
       setRequestInProgress(false);
     });
@@ -171,10 +144,9 @@ export default function Home() {
       )}
       {uniqueIdentifier && (
         <p className="mt-2">
-          <b>Unique identifier:</b>
+          <b>Unique identifier:</b> {uniqueIdentifier}
         </p>
       )}
-      {uniqueIdentifier && <p>{uniqueIdentifier}</p>}
       {verified !== undefined && (
         <p className="mt-2">
           <b>Verified:</b> {verified ? "Yes" : "No"}

@@ -72,7 +72,8 @@ export default function Home() {
       setRequestInProgress(false);
     });
 
-    onResult(async ({ result, uniqueIdentifier, verified, queryResultErrors }) => {
+    // FIX: Remove unused queryResultErrors
+    onResult(async ({ result, uniqueIdentifier, verified }) => {
       setFirstName(result?.firstname?.disclose?.result);
       setIsOver18(result?.age?.gte?.result);
       setMessage("Result received");
