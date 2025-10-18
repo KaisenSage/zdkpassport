@@ -84,20 +84,27 @@ export default function Home() {
       }
 
       try {
+        // Pass the proof you've received from the user to this function
+        // along with the scope you've used above and the function will return
+        // all the parameters needed to call the verifier contract
         const params = zkPassportRef.current.getSolidityVerifierParameters({
           proof,
           scope: "adult",
           devMode: true,
         });
 
+        // Get the details of the verifier contract: its address, its abi and the function name
+        // For now the verifier contract is only deployed on Ethereum Sepolia
         const { address, abi, functionName } =
           zkPassportRef.current.getSolidityVerifierDetails("ethereum_sepolia");
 
+        // Create a public client for sepolia
         const publicClient = createPublicClient({
           chain: sepolia,
           transport: http("https://ethereum-sepolia-rpc.publicnode.com"),
         });
 
+        // Use the public client to call the verify function of the ZKPassport verifier contract
         const contractCallResult = await publicClient.readContract({
           address,
           abi,
@@ -106,6 +113,8 @@ export default function Home() {
         });
 
         console.log("Contract call result", contractCallResult);
+        // The result is an array with the first element being a boolean indicating if the proof is valid
+        // and the second element being the unique identifier
         const isVerified = Array.isArray(contractCallResult)
           ? Boolean(contractCallResult[0])
           : false;
@@ -113,17 +122,14 @@ export default function Home() {
           ? String(contractCallResult[1])
           : "";
         setOnChainVerified(isVerified);
-        setUniqueIdentifier(uniqueIdentifier); // Ensure state is set here as well
       } catch (error) {
         console.error("Error preparing verification:", error);
       }
     });
 
-    // FIX: Remove queryResultErrors if unused, or prefix with _
-    onResult(async ({ result, uniqueIdentifier, verified, queryResultErrors: _queryResultErrors }) => {
+    onResult(async ({ result, uniqueIdentifier, verified, queryResultErrors }) => {
       console.log("Result of the query", result);
-      // If you want to log errors, uncomment next line:
-      // console.log("Query result errors", _queryResultErrors);
+      console.log("Query result errors", queryResultErrors);
       setIsOver18(result?.age?.gte?.result);
       setMessage("Result received");
       setUniqueIdentifier(uniqueIdentifier || "");
@@ -165,9 +171,10 @@ export default function Home() {
       )}
       {uniqueIdentifier && (
         <p className="mt-2">
-          <b>Unique identifier:</b> {uniqueIdentifier}
+          <b>Unique identifier:</b>
         </p>
       )}
+      {uniqueIdentifier && <p>{uniqueIdentifier}</p>}
       {verified !== undefined && (
         <p className="mt-2">
           <b>Verified:</b> {verified ? "Yes" : "No"}
