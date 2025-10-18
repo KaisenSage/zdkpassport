@@ -77,13 +77,14 @@ export default function Home() {
       setRequestInProgress(false);
     });
 
-    onResult(async ({ result, uniqueIdentifier, verified, queryResultErrors }) => {
+    // FIX: If ESLint complains, prefix with _
+    onResult(async ({ result, uniqueIdentifier: _uniqueIdentifier, verified, queryResultErrors }) => {
       console.log("Result of the query", result);
       console.log("Query result errors", queryResultErrors);
       setFirstName(result?.firstname?.disclose?.result);
       setIsOver18(result?.age?.gte?.result);
       setMessage("Result received");
-      setUniqueIdentifier(uniqueIdentifier || "");
+      setUniqueIdentifier(_uniqueIdentifier || "");
       setVerified(verified);
       setRequestInProgress(false);
 
