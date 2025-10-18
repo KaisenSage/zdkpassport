@@ -2,128 +2,205 @@
 import { useEffect, useRef, useState } from "react";
 import { ZKPassport, ProofResult } from "@zkpassport/sdk";
 import QRCode from "react-qr-code";
+import { createPublicClient, http } from "viem";
+import { sepolia } from "viem/chains";
 
 export default function Home() {
   const [message, setMessage] = useState("");
-  const [firstName, setFirstName] = useState<string | undefined>(undefined);
   const [isOver18, setIsOver18] = useState<boolean | undefined>(undefined);
   const [queryUrl, setQueryUrl] = useState("");
   const [uniqueIdentifier, setUniqueIdentifier] = useState("");
   const [verified, setVerified] = useState<boolean | undefined>(undefined);
   const [requestInProgress, setRequestInProgress] = useState(false);
+  const [onChainVerified, setOnChainVerified] = useState<boolean | undefined>(undefined);
+  const [error, setError] = useState<string | null>(null);
   const zkPassportRef = useRef<ZKPassport | null>(null);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     if (!zkPassportRef.current) {
       zkPassportRef.current = new ZKPassport(window.location.hostname);
     }
+    // Cleanup timeout on unmount
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
   }, []);
+  
+  // Custom error UI
+  const renderError = () => (
+    <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-70 z-50">
+      <div className="bg-white rounded-lg p-6 shadow-lg text-center max-w-sm">
+        <h2 className="text-lg font-bold mb-2">Unexpected error occurred</h2>
+        <p className="mb-2">Apologies.. The app will close now<br />Please restart the app</p>
+        <p className="mb-2">Signal 6 was raised.<br />(null)</p>
+        <button
+          className="mt-4 px-4 py-2 bg-gray-500 text-white rounded"
+          onClick={() => setError(null)}
+        >
+          Dismiss
+        </button>
+      </div>
+    </div>
+  );
 
   const createRequest = async () => {
     if (!zkPassportRef.current) {
       return;
     }
-    setFirstName("");
     setMessage("");
     setQueryUrl("");
     setIsOver18(undefined);
     setUniqueIdentifier("");
     setVerified(undefined);
+    setOnChainVerified(undefined);
+    setError(null);
 
-    const queryBuilder = await zkPassportRef.current.request({
-      name: "ZKPassport",
-      logo: "https://zkpassport.id/favicon.png",
-      purpose: "Proof of firstname and adulthood",
-      scope: "adult-check",
-      mode: "fast",
-      devMode: true,
-    });
-
-    const {
-      url,
-      onRequestReceived,
-      onGeneratingProof,
-      onProofGenerated,
-      onResult,
-      onReject,
-      onError,
-    } = queryBuilder
-      .disclose("firstname")
-      .gte("age", 18)
-      .disclose("document_type")
-      .done();
-
-    setQueryUrl(url);
-    setRequestInProgress(true);
-
-    onRequestReceived(() => {
-      setMessage("Request received");
-    });
-
-    onGeneratingProof(() => {
-      setMessage("Generating proof...");
-    });
-
-    const proofs: ProofResult[] = [];
-
-    onProofGenerated((result: ProofResult) => {
-      proofs.push(result);
-      setMessage(`Proofs received`);
+    // Set a 30s timeout to show error if nothing happens
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => {
       setRequestInProgress(false);
-    });
+      setError("timeout");
+    }, 30000);
 
-    // FIX: Remove unused queryResultErrors
-    onResult(async ({ result, uniqueIdentifier, verified }) => {
-      setFirstName(result?.firstname?.disclose?.result);
-      setIsOver18(result?.age?.gte?.result);
-      setMessage("Result received");
-      setUniqueIdentifier(uniqueIdentifier || "");
-      setVerified(verified);
-      setRequestInProgress(false);
-
-      await fetch("/api/register", {
-        method: "POST",
-        body: JSON.stringify({
-          queryResult: result,
-          proofs,
-          domain: window.location.hostname,
-        }),
+    try {
+      const queryBuilder = await zkPassportRef.current.request({
+        name: "ZKPassport",
+        logo: "https://zkpassport.id/favicon.png",
+        purpose: "Proof of adulthood",
+        scope: "adult",
+        mode: "compressed-evm",
+        devMode: true,
       });
-    });
 
-    onReject(() => {
-      setMessage("User rejected the request");
-      setRequestInProgress(false);
-    });
+      const {
+        url,
+        onRequestReceived,
+        onGeneratingProof,
+        onProofGenerated,
+        onResult,
+        onReject,
+        onError,
+      } = queryBuilder
+        .gte("age", 18)
+        .bind("user_address", "0x5e4B11F7B7995F5Cee0134692a422b045091112F")
+        .bind("chain", "ethereum_sepolia")
+        .bind("custom_data", "email:test@test.com,customer_id:1234567890")
+        .done();
 
-    onError(() => {
-      setMessage("An error occurred");
+      setQueryUrl(url);
+      setRequestInProgress(true);
+
+      onRequestReceived(() => {
+        setMessage("Request received");
+      });
+
+      onGeneratingProof(() => {
+        setMessage("Generating proof...");
+      });
+
+      const proofs: ProofResult[] = [];
+
+      onProofGenerated(async (proof: ProofResult) => {
+        try {
+          proofs.push(proof);
+          setMessage(`Proofs received`);
+          setRequestInProgress(false);
+
+          if (!zkPassportRef.current) {
+            return;
+          }
+
+          const params = zkPassportRef.current.getSolidityVerifierParameters({
+            proof,
+            scope: "adult",
+            devMode: true,
+          });
+
+          const { address, abi, functionName } =
+            zkPassportRef.current.getSolidityVerifierDetails("ethereum_sepolia");
+
+          const publicClient = createPublicClient({
+            chain: sepolia,
+            transport: http("https://ethereum-sepolia-rpc.publicnode.com"),
+          });
+
+          const contractCallResult = await publicClient.readContract({
+            address,
+            abi,
+            functionName,
+            args: [params],
+          });
+
+          const isVerified = Array.isArray(contractCallResult)
+            ? Boolean(contractCallResult[0])
+            : false;
+          const contractUniqueIdentifier = Array.isArray(contractCallResult)
+            ? String(contractCallResult[1])
+            : "";
+          setOnChainVerified(isVerified);
+          setUniqueIdentifier(contractUniqueIdentifier);
+        } catch (error) {
+          setError("crash");
+        }
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      });
+
+      onResult(async ({ result, uniqueIdentifier, verified }) => {
+        setIsOver18(result?.age?.gte?.result);
+        setMessage("Result received");
+        setUniqueIdentifier(uniqueIdentifier || "");
+        setVerified(verified);
+        setRequestInProgress(false);
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      });
+
+      onReject(() => {
+        setMessage("User rejected the request");
+        setRequestInProgress(false);
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      });
+
+      onError(() => {
+        setMessage("An error occurred");
+        setRequestInProgress(false);
+        setError("crash");
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      });
+    } catch (err) {
       setRequestInProgress(false);
-    });
+      setError("crash");
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    }
   };
 
+  // Show error overlay if error is present
   return (
     <main className="w-full h-full flex flex-col items-center p-10">
+      {error && renderError()}
       {queryUrl && <QRCode className="mb-4" value={queryUrl} />}
       {message && <p>{message}</p>}
-      {firstName && (
-        <p className="mt-2">
-          <b>Firstname:</b> {firstName}
-        </p>
-      )}
       {typeof isOver18 === "boolean" && (
         <p className="mt-2">
-          <b>Is over 18:</b> {isOver18 ? "Yes" : "No"}</p>
+          <b>Is over 18:</b> {isOver18 ? "Yes" : "No"}
+        </p>
       )}
       {uniqueIdentifier && (
         <p className="mt-2">
-          <b>Unique identifier:</b> {uniqueIdentifier}</p>
+          <b>Unique identifier:</b> {uniqueIdentifier}
+        </p>
       )}
       {verified !== undefined && (
         <p className="mt-2">
-          <b>Verified:</b> {verified ? "Yes" : "No"}</p>
+          <b>Verified:</b> {verified ? "Yes" : "No"}
+        </p>
       )}
-      {!requestInProgress && (
+      {onChainVerified !== undefined && (
+        <p className="mt-2">
+          <b>On-chain verified:</b> {onChainVerified ? "Yes" : "No"}
+        </p>
+      )}
+      {!requestInProgress && !error && (
         <button
           className="p-4 mt-4 bg-gray-500 rounded-lg text-white font-medium"
           onClick={createRequest}
