@@ -72,7 +72,6 @@ export default function Home() {
       setRequestInProgress(false);
     });
 
-    // FIX: Use uniqueIdentifier and actually set it!
     onResult(async ({ result, uniqueIdentifier, verified, queryResultErrors }) => {
       setFirstName(result?.firstname?.disclose?.result);
       setIsOver18(result?.age?.gte?.result);
