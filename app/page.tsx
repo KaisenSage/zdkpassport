@@ -54,41 +54,34 @@ export default function Home() {
       .done();
 
     setQueryUrl(url);
-    console.log(url);
-
     setRequestInProgress(true);
 
     onRequestReceived(() => {
-      console.log("QR code scanned");
       setMessage("Request received");
     });
 
     onGeneratingProof(() => {
-      console.log("Generating proof");
       setMessage("Generating proof...");
     });
 
     const proofs: ProofResult[] = [];
 
     onProofGenerated((result: ProofResult) => {
-      console.log("Proof result", result);
       proofs.push(result);
       setMessage(`Proofs received`);
       setRequestInProgress(false);
     });
 
-    // FIX: If ESLint complains, prefix with _
-    onResult(async ({ result, uniqueIdentifier: _uniqueIdentifier, verified, queryResultErrors }) => {
-      console.log("Result of the query", result);
-      console.log("Query result errors", queryResultErrors);
+    // FIX: Use uniqueIdentifier and actually set it!
+    onResult(async ({ result, uniqueIdentifier, verified, queryResultErrors }) => {
       setFirstName(result?.firstname?.disclose?.result);
       setIsOver18(result?.age?.gte?.result);
       setMessage("Result received");
-      setUniqueIdentifier(_uniqueIdentifier || "");
+      setUniqueIdentifier(uniqueIdentifier || "");
       setVerified(verified);
       setRequestInProgress(false);
 
-      const res = await fetch("/api/register", {
+      await fetch("/api/register", {
         method: "POST",
         body: JSON.stringify({
           queryResult: result,
@@ -96,18 +89,14 @@ export default function Home() {
           domain: window.location.hostname,
         }),
       });
-
-      console.log("Response from the server", await res.json());
     });
 
     onReject(() => {
-      console.log("User rejected");
       setMessage("User rejected the request");
       setRequestInProgress(false);
     });
 
-    onError((error: unknown) => {
-      console.error("Error", error);
+    onError(() => {
       setMessage("An error occurred");
       setRequestInProgress(false);
     });
