@@ -14,11 +14,16 @@ export default function Home() {
   const [requestInProgress, setRequestInProgress] = useState(false);
   const [onChainVerified, setOnChainVerified] = useState<boolean | undefined>(undefined);
   const zkPassportRef = useRef<ZKPassport | null>(null);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     if (!zkPassportRef.current) {
       zkPassportRef.current = new ZKPassport(window.location.hostname);
     }
+    // Cleanup timeout on unmount
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
   }, []);
 
   const createRequest = async () => {
@@ -32,105 +37,118 @@ export default function Home() {
     setVerified(undefined);
     setOnChainVerified(undefined);
 
-    const queryBuilder = await zkPassportRef.current.request({
-      name: "ZKPassport",
-      logo: "https://zkpassport.id/favicon.png",
-      purpose: "Proof of adulthood",
-      scope: "adult",
-      mode: "compressed-evm",
-      devMode: true,
-    });
+    // (Optional) Remove timeout logic if you don't want to handle loading forever
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
 
-    const {
-      url,
-      onRequestReceived,
-      onGeneratingProof,
-      onProofGenerated,
-      onResult,
-      onReject,
-      onError,
-    } = queryBuilder
-      .gte("age", 18)
-      .bind("user_address", "0x5e4B11F7B7995F5Cee0134692a422b045091112F")
-      .bind("chain", "ethereum_sepolia")
-      .bind("custom_data", "email:test@test.com,customer_id:1234567890")
-      .done();
+    try {
+      const queryBuilder = await zkPassportRef.current.request({
+        name: "ZKPassport",
+        logo: "https://zkpassport.id/favicon.png",
+        purpose: "Proof of adulthood",
+        scope: "adult",
+        mode: "compressed-evm",
+        devMode: true,
+      });
 
-    setQueryUrl(url);
-    setRequestInProgress(true);
+      const {
+        url,
+        onRequestReceived,
+        onGeneratingProof,
+        onProofGenerated,
+        onResult,
+        onReject,
+        onError,
+      } = queryBuilder
+        .gte("age", 18)
+        .bind("user_address", "0x5e4B11F7B7995F5Cee0134692a422b045091112F")
+        .bind("chain", "ethereum_sepolia")
+        .bind("custom_data", "email:test@test.com,customer_id:1234567890")
+        .done();
 
-    onRequestReceived(() => {
-      setMessage("Request received");
-    });
+      setQueryUrl(url);
+      setRequestInProgress(true);
 
-    onGeneratingProof(() => {
-      setMessage("Generating proof...");
-    });
+      onRequestReceived(() => {
+        setMessage("Request received");
+      });
 
-    const proofs: ProofResult[] = [];
+      onGeneratingProof(() => {
+        setMessage("Generating proof...");
+      });
 
-    onProofGenerated(async (proof: ProofResult) => {
-      proofs.push(proof);
-      setMessage(`Proofs received`);
+      const proofs: ProofResult[] = [];
+
+      onProofGenerated(async (proof: ProofResult) => {
+        try {
+          proofs.push(proof);
+          setMessage(`Proofs received`);
+          setRequestInProgress(false);
+
+          if (!zkPassportRef.current) {
+            return;
+          }
+
+          const params = zkPassportRef.current.getSolidityVerifierParameters({
+            proof,
+            scope: "adult",
+            devMode: true,
+          });
+
+          const { address, abi, functionName } =
+            zkPassportRef.current.getSolidityVerifierDetails("ethereum_sepolia");
+
+          const publicClient = createPublicClient({
+            chain: sepolia,
+            transport: http("https://ethereum-sepolia-rpc.publicnode.com"),
+          });
+
+          const contractCallResult = await publicClient.readContract({
+            address,
+            abi,
+            functionName,
+            args: [params],
+          });
+
+          const isVerified = Array.isArray(contractCallResult)
+            ? Boolean(contractCallResult[0])
+            : false;
+          const contractUniqueIdentifier = Array.isArray(contractCallResult)
+            ? String(contractCallResult[1])
+            : "";
+          setOnChainVerified(isVerified);
+          setUniqueIdentifier(contractUniqueIdentifier);
+        } catch (error) {
+          // Just log the error, no modal shown
+          console.error("Error preparing verification:", error);
+        }
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      });
+
+      onResult(async ({ result, uniqueIdentifier, verified }) => {
+        setIsOver18(result?.age?.gte?.result);
+        setMessage("Result received");
+        setUniqueIdentifier(uniqueIdentifier || "");
+        setVerified(verified);
+        setRequestInProgress(false);
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      });
+
+      onReject(() => {
+        setMessage("User rejected the request");
+        setRequestInProgress(false);
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      });
+
+      onError(() => {
+        setMessage("An error occurred");
+        setRequestInProgress(false);
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      });
+    } catch (err) {
       setRequestInProgress(false);
-
-      if (!zkPassportRef.current) {
-        return;
-      }
-
-      try {
-        const params = zkPassportRef.current.getSolidityVerifierParameters({
-          proof,
-          scope: "adult",
-          devMode: true,
-        });
-
-        const { address, abi, functionName } =
-          zkPassportRef.current.getSolidityVerifierDetails("ethereum_sepolia");
-
-        const publicClient = createPublicClient({
-          chain: sepolia,
-          transport: http("https://ethereum-sepolia-rpc.publicnode.com"),
-        });
-
-        const contractCallResult = await publicClient.readContract({
-          address,
-          abi,
-          functionName,
-          args: [params],
-        });
-
-        const isVerified = Array.isArray(contractCallResult)
-          ? Boolean(contractCallResult[0])
-          : false;
-        const contractUniqueIdentifier = Array.isArray(contractCallResult)
-          ? String(contractCallResult[1])
-          : "";
-        setOnChainVerified(isVerified);
-        setUniqueIdentifier(contractUniqueIdentifier);
-      } catch (error) {
-        console.error("Error preparing verification:", error);
-      }
-    });
-
-    // FIX: Remove unused queryResultErrors
-    onResult(async ({ result, uniqueIdentifier, verified }) => {
-      setIsOver18(result?.age?.gte?.result);
-      setMessage("Result received");
-      setUniqueIdentifier(uniqueIdentifier || "");
-      setVerified(verified);
-      setRequestInProgress(false);
-    });
-
-    onReject(() => {
-      setMessage("User rejected the request");
-      setRequestInProgress(false);
-    });
-
-    onError(() => {
-      setMessage("An error occurred");
-      setRequestInProgress(false);
-    });
+      console.error("Unexpected error occurred in request:", err);
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    }
   };
 
   return (
