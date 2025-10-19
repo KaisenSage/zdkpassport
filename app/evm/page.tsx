@@ -20,7 +20,6 @@ export default function Home() {
     if (!zkPassportRef.current) {
       zkPassportRef.current = new ZKPassport(window.location.hostname);
     }
-    // Cleanup timeout on unmount
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
@@ -39,7 +38,6 @@ export default function Home() {
 
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
 
-    // For debugging: Track which step fails
     let step = "init";
     try {
       step = "request";
@@ -52,49 +50,24 @@ export default function Home() {
         devMode: true,
       });
 
-      step = "queryBuilder";
-      // Add all parameters one by one, with per-parameter try/catch
-      let url, onRequestReceived, onGeneratingProof, onProofGenerated, onResult, onReject, onError;
+      // Chain all parameters before .done()
+      step = "builder chain";
+      const finalBuilder = queryBuilder
+        .gte("age", 18)
+        .bind("user_address", "0x5e4B11F7B7995F5Cee0134692a422b045091112F")
+        .bind("chain", "ethereum_sepolia")
+        .bind("custom_data", "email:test@test.com,customer_id:1234567890");
 
-      try {
-        step = "gte_age";
-        ({ url, onRequestReceived, onGeneratingProof, onProofGenerated, onResult, onReject, onError } = queryBuilder.gte("age", 18));
-      } catch (err) {
-        console.error("Error at .gte('age', 18):", err);
-        return;
-      }
-
-      try {
-        step = "bind_user_address";
-        ({ url, onRequestReceived, onGeneratingProof, onProofGenerated, onResult, onReject, onError } = queryBuilder.bind("user_address", "0x5e4B11F7B7995F5Cee0134692a422b045091112F"));
-      } catch (err) {
-        console.error("Error at .bind('user_address'):", err);
-        return;
-      }
-
-      try {
-        step = "bind_chain";
-        ({ url, onRequestReceived, onGeneratingProof, onProofGenerated, onResult, onReject, onError } = queryBuilder.bind("chain", "ethereum_sepolia"));
-      } catch (err) {
-        console.error("Error at .bind('chain'):", err);
-        return;
-      }
-
-      try {
-        step = "bind_custom_data";
-        ({ url, onRequestReceived, onGeneratingProof, onProofGenerated, onResult, onReject, onError } = queryBuilder.bind("custom_data", "email:test@test.com,customer_id:1234567890"));
-      } catch (err) {
-        console.error("Error at .bind('custom_data'):", err);
-        return;
-      }
-
-      try {
-        step = "done";
-        ({ url, onRequestReceived, onGeneratingProof, onProofGenerated, onResult, onReject, onError } = queryBuilder.done());
-      } catch (err) {
-        console.error("Error at .done():", err);
-        return;
-      }
+      step = "done";
+      const {
+        url,
+        onRequestReceived,
+        onGeneratingProof,
+        onProofGenerated,
+        onResult,
+        onReject,
+        onError,
+      } = finalBuilder.done();
 
       setQueryUrl(url);
       setRequestInProgress(true);
