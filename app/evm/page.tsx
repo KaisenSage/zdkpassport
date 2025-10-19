@@ -37,7 +37,6 @@ export default function Home() {
     setVerified(undefined);
     setOnChainVerified(undefined);
 
-    // (Optional) Remove timeout logic if you don't want to handle loading forever
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
 
     try {
@@ -50,6 +49,7 @@ export default function Home() {
         devMode: true,
       });
 
+      // Minimal request: ONLY .gte("age", 18)
       const {
         url,
         onRequestReceived,
@@ -60,9 +60,6 @@ export default function Home() {
         onError,
       } = queryBuilder
         .gte("age", 18)
-        .bind("user_address", "0x5e4B11F7B7995F5Cee0134692a422b045091112F")
-        .bind("chain", "ethereum_sepolia")
-        .bind("custom_data", "email:test@test.com,customer_id:1234567890")
         .done();
 
       setQueryUrl(url);
@@ -88,38 +85,43 @@ export default function Home() {
             return;
           }
 
-          const params = zkPassportRef.current.getSolidityVerifierParameters({
-            proof,
-            scope: "adult",
-            devMode: true,
-          });
+          // The following on-chain verification is optional, and can be commented out for pure front-end test:
+          try {
+            const params = zkPassportRef.current.getSolidityVerifierParameters({
+              proof,
+              scope: "adult",
+              devMode: true,
+            });
 
-          const { address, abi, functionName } =
-            zkPassportRef.current.getSolidityVerifierDetails("ethereum_sepolia");
+            const { address, abi, functionName } =
+              zkPassportRef.current.getSolidityVerifierDetails("ethereum_sepolia");
 
-          const publicClient = createPublicClient({
-            chain: sepolia,
-            transport: http("https://ethereum-sepolia-rpc.publicnode.com"),
-          });
+            const publicClient = createPublicClient({
+              chain: sepolia,
+              transport: http("https://ethereum-sepolia-rpc.publicnode.com"),
+            });
 
-          const contractCallResult = await publicClient.readContract({
-            address,
-            abi,
-            functionName,
-            args: [params],
-          });
+            const contractCallResult = await publicClient.readContract({
+              address,
+              abi,
+              functionName,
+              args: [params],
+            });
 
-          const isVerified = Array.isArray(contractCallResult)
-            ? Boolean(contractCallResult[0])
-            : false;
-          const contractUniqueIdentifier = Array.isArray(contractCallResult)
-            ? String(contractCallResult[1])
-            : "";
-          setOnChainVerified(isVerified);
-          setUniqueIdentifier(contractUniqueIdentifier);
+            const isVerified = Array.isArray(contractCallResult)
+              ? Boolean(contractCallResult[0])
+              : false;
+            const contractUniqueIdentifier = Array.isArray(contractCallResult)
+              ? String(contractCallResult[1])
+              : "";
+            setOnChainVerified(isVerified);
+            setUniqueIdentifier(contractUniqueIdentifier);
+          } catch (error) {
+            // Just log the error, no modal shown
+            console.error("Error preparing verification:", error);
+          }
         } catch (error) {
-          // Just log the error, no modal shown
-          console.error("Error preparing verification:", error);
+          console.error("Error in onProofGenerated:", error);
         }
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
       });
