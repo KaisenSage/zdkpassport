@@ -39,7 +39,10 @@ export default function Home() {
 
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
 
+    // For debugging: Track which step fails
+    let step = "init";
     try {
+      step = "request";
       const queryBuilder = await zkPassportRef.current.request({
         name: "ZKPassport",
         logo: "https://zkpassport.id/favicon.png",
@@ -49,18 +52,49 @@ export default function Home() {
         devMode: true,
       });
 
-      // Minimal request: ONLY .gte("age", 18)
-      const {
-        url,
-        onRequestReceived,
-        onGeneratingProof,
-        onProofGenerated,
-        onResult,
-        onReject,
-        onError,
-      } = queryBuilder
-        .gte("age", 18)
-        .done();
+      step = "queryBuilder";
+      // Add all parameters one by one, with per-parameter try/catch
+      let url, onRequestReceived, onGeneratingProof, onProofGenerated, onResult, onReject, onError;
+
+      try {
+        step = "gte_age";
+        ({ url, onRequestReceived, onGeneratingProof, onProofGenerated, onResult, onReject, onError } = queryBuilder.gte("age", 18));
+      } catch (err) {
+        console.error("Error at .gte('age', 18):", err);
+        return;
+      }
+
+      try {
+        step = "bind_user_address";
+        ({ url, onRequestReceived, onGeneratingProof, onProofGenerated, onResult, onReject, onError } = queryBuilder.bind("user_address", "0x5e4B11F7B7995F5Cee0134692a422b045091112F"));
+      } catch (err) {
+        console.error("Error at .bind('user_address'):", err);
+        return;
+      }
+
+      try {
+        step = "bind_chain";
+        ({ url, onRequestReceived, onGeneratingProof, onProofGenerated, onResult, onReject, onError } = queryBuilder.bind("chain", "ethereum_sepolia"));
+      } catch (err) {
+        console.error("Error at .bind('chain'):", err);
+        return;
+      }
+
+      try {
+        step = "bind_custom_data";
+        ({ url, onRequestReceived, onGeneratingProof, onProofGenerated, onResult, onReject, onError } = queryBuilder.bind("custom_data", "email:test@test.com,customer_id:1234567890"));
+      } catch (err) {
+        console.error("Error at .bind('custom_data'):", err);
+        return;
+      }
+
+      try {
+        step = "done";
+        ({ url, onRequestReceived, onGeneratingProof, onProofGenerated, onResult, onReject, onError } = queryBuilder.done());
+      } catch (err) {
+        console.error("Error at .done():", err);
+        return;
+      }
 
       setQueryUrl(url);
       setRequestInProgress(true);
@@ -85,8 +119,8 @@ export default function Home() {
             return;
           }
 
-          // The following on-chain verification is optional, and can be commented out for pure front-end test:
           try {
+            step = "onChainVerification";
             const params = zkPassportRef.current.getSolidityVerifierParameters({
               proof,
               scope: "adult",
@@ -117,11 +151,10 @@ export default function Home() {
             setOnChainVerified(isVerified);
             setUniqueIdentifier(contractUniqueIdentifier);
           } catch (error) {
-            // Just log the error, no modal shown
-            console.error("Error preparing verification:", error);
+            console.error("Error preparing verification at", step, error);
           }
         } catch (error) {
-          console.error("Error in onProofGenerated:", error);
+          console.error("Error in onProofGenerated at", step, error);
         }
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
       });
@@ -148,7 +181,7 @@ export default function Home() {
       });
     } catch (err) {
       setRequestInProgress(false);
-      console.error("Unexpected error occurred in request:", err);
+      console.error("Unexpected error occurred in request at", step, err);
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     }
   };
