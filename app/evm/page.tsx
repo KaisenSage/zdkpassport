@@ -20,8 +20,10 @@ export default function Home() {
     if (!zkPassportRef.current) {
       zkPassportRef.current = new ZKPassport(window.location.hostname);
     }
+    // Fix: Use local variable for cleanup
+    const timeoutId = timeoutRef.current;
     return () => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      if (timeoutId) clearTimeout(timeoutId);
     };
   }, []);
 
@@ -123,11 +125,11 @@ export default function Home() {
               : "";
             setOnChainVerified(isVerified);
             setUniqueIdentifier(contractUniqueIdentifier);
-          } catch (error) {
-            console.error("Error preparing verification at", step, error);
+          } catch (chainError) {
+            console.error("Error preparing verification at", step, chainError);
           }
-        } catch (error) {
-          console.error("Error in onProofGenerated at", step, error);
+        } catch (proofError) {
+          console.error("Error in onProofGenerated at", step, proofError);
         }
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
       });
@@ -152,9 +154,9 @@ export default function Home() {
         setRequestInProgress(false);
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
       });
-    } catch (err) {
+    } catch (mainError) {
       setRequestInProgress(false);
-      console.error("Unexpected error occurred in request at", step, err);
+      console.error("Unexpected error occurred in request at", step, mainError);
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     }
   };
