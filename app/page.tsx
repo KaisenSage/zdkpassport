@@ -13,7 +13,7 @@ export default function Home() {
   const [verified, setVerified] = useState<boolean | undefined>(undefined);
   const [requestInProgress, setRequestInProgress] = useState(false);
   const [onChainVerified, setOnChainVerified] = useState<boolean | undefined>(undefined);
-  const [error, setError] = useState<string | null>(null);
+  // Removed unused error variable
   const zkPassportRef = useRef<ZKPassport | null>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -21,28 +21,12 @@ export default function Home() {
     if (!zkPassportRef.current) {
       zkPassportRef.current = new ZKPassport(window.location.hostname);
     }
-    // Cleanup timeout on unmount
+    // Fix: use local variable for cleanup
+    const timeoutId = timeoutRef.current;
     return () => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      if (timeoutId) clearTimeout(timeoutId);
     };
   }, []);
-  
-  // Custom error UI
-  const renderError = () => (
-    <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-70 z-50">
-      <div className="bg-white rounded-lg p-6 shadow-lg text-center max-w-sm">
-        <h2 className="text-lg font-bold mb-2">Unexpected error occurred</h2>
-        <p className="mb-2">Apologies.. The app will close now<br />Please restart the app</p>
-        <p className="mb-2">Signal 6 was raised.<br />(null)</p>
-        <button
-          className="mt-4 px-4 py-2 bg-gray-500 text-white rounded"
-          onClick={() => setError(null)}
-        >
-          Dismiss
-        </button>
-      </div>
-    </div>
-  );
 
   const createRequest = async () => {
     if (!zkPassportRef.current) {
@@ -54,16 +38,12 @@ export default function Home() {
     setUniqueIdentifier("");
     setVerified(undefined);
     setOnChainVerified(undefined);
-    setError(null);
 
-    // Set a 30s timeout to show error if nothing happens
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    timeoutRef.current = setTimeout(() => {
-      setRequestInProgress(false);
-      setError("timeout");
-    }, 30000);
 
+    let step = "init";
     try {
+      step = "request";
       const queryBuilder = await zkPassportRef.current.request({
         name: "ZKPassport",
         logo: "https://zkpassport.id/favicon.png",
@@ -73,6 +53,14 @@ export default function Home() {
         devMode: true,
       });
 
+      step = "builder chain";
+      const finalBuilder = queryBuilder
+        .gte("age", 18)
+        .bind("user_address", "0x5e4B11F7B7995F5Cee0134692a422b045091112F")
+        .bind("chain", "ethereum_sepolia")
+        .bind("custom_data", "email:test@test.com,customer_id:1234567890");
+
+      step = "done";
       const {
         url,
         onRequestReceived,
@@ -81,12 +69,7 @@ export default function Home() {
         onResult,
         onReject,
         onError,
-      } = queryBuilder
-        .gte("age", 18)
-        .bind("user_address", "0x5e4B11F7B7995F5Cee0134692a422b045091112F")
-        .bind("chain", "ethereum_sepolia")
-        .bind("custom_data", "email:test@test.com,customer_id:1234567890")
-        .done();
+      } = finalBuilder.done();
 
       setQueryUrl(url);
       setRequestInProgress(true);
@@ -111,37 +94,42 @@ export default function Home() {
             return;
           }
 
-          const params = zkPassportRef.current.getSolidityVerifierParameters({
-            proof,
-            scope: "adult",
-            devMode: true,
-          });
+          try {
+            step = "onChainVerification";
+            const params = zkPassportRef.current.getSolidityVerifierParameters({
+              proof,
+              scope: "adult",
+              devMode: true,
+            });
 
-          const { address, abi, functionName } =
-            zkPassportRef.current.getSolidityVerifierDetails("ethereum_sepolia");
+            const { address, abi, functionName } =
+              zkPassportRef.current.getSolidityVerifierDetails("ethereum_sepolia");
 
-          const publicClient = createPublicClient({
-            chain: sepolia,
-            transport: http("https://ethereum-sepolia-rpc.publicnode.com"),
-          });
+            const publicClient = createPublicClient({
+              chain: sepolia,
+              transport: http("https://ethereum-sepolia-rpc.publicnode.com"),
+            });
 
-          const contractCallResult = await publicClient.readContract({
-            address,
-            abi,
-            functionName,
-            args: [params],
-          });
+            const contractCallResult = await publicClient.readContract({
+              address,
+              abi,
+              functionName,
+              args: [params],
+            });
 
-          const isVerified = Array.isArray(contractCallResult)
-            ? Boolean(contractCallResult[0])
-            : false;
-          const contractUniqueIdentifier = Array.isArray(contractCallResult)
-            ? String(contractCallResult[1])
-            : "";
-          setOnChainVerified(isVerified);
-          setUniqueIdentifier(contractUniqueIdentifier);
-        } catch (error) {
-          setError("crash");
+            const isVerified = Array.isArray(contractCallResult)
+              ? Boolean(contractCallResult[0])
+              : false;
+            const contractUniqueIdentifier = Array.isArray(contractCallResult)
+              ? String(contractCallResult[1])
+              : "";
+            setOnChainVerified(isVerified);
+            setUniqueIdentifier(contractUniqueIdentifier);
+          } catch (chainError) {
+            console.error("Error preparing verification at", step, chainError);
+          }
+        } catch (proofError) {
+          console.error("Error in onProofGenerated at", step, proofError);
         }
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
       });
@@ -164,20 +152,18 @@ export default function Home() {
       onError(() => {
         setMessage("An error occurred");
         setRequestInProgress(false);
-        setError("crash");
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
       });
-    } catch (err) {
+    } catch (mainError) {
       setRequestInProgress(false);
-      setError("crash");
+      // Now mainError is used!
+      console.error("Unexpected error occurred in request at", step, mainError);
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     }
   };
 
-  // Show error overlay if error is present
   return (
     <main className="w-full h-full flex flex-col items-center p-10">
-      {error && renderError()}
       {queryUrl && <QRCode className="mb-4" value={queryUrl} />}
       {message && <p>{message}</p>}
       {typeof isOver18 === "boolean" && (
@@ -200,7 +186,7 @@ export default function Home() {
           <b>On-chain verified:</b> {onChainVerified ? "Yes" : "No"}
         </p>
       )}
-      {!requestInProgress && !error && (
+      {!requestInProgress && (
         <button
           className="p-4 mt-4 bg-gray-500 rounded-lg text-white font-medium"
           onClick={createRequest}
