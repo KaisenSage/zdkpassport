@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { EmployeeRepository } from '../models/employeeRepository';
+import { Employee, EmployeeRepository } from '../models/employeeRepository';
 import { ZkAccountService } from '../services/zkAccountService';
 
 export class OnboardingController {
@@ -11,16 +11,28 @@ export class OnboardingController {
       const { name, email, initialAllocation } = req.body;
       if (!name) return res.status(400).json({ error: 'name is required' });
 
-      let employee = null;
-      if (email) employee = await this.repo.getEmployeeByEmail(email);
+      let employee: Employee | null = null;
+      if (email) {
+        employee = await this.repo.getEmployeeByEmail(email);
+      }
 
       if (!employee) {
         employee = await this.repo.createEmployee(name, email || null);
+        // Defensive check: fail explicitly if createEmployee returned null/undefined
+        if (!employee) {
+          console.error('onboard error: createEmployee returned null');
+          return res.status(500).json({ error: 'failed to create employee' });
+        }
       }
 
+      // Ensure zk account exists
       if (!employee.zk_account_id) {
         await this.zk.createSubAccountForEmployee(employee.id, { email });
         employee = await this.repo.getEmployeeById(employee.id);
+        if (!employee) {
+          console.error('onboard error: employee missing after zk sub-account creation');
+          return res.status(500).json({ error: 'employee not found after zk deployment' });
+        }
       }
 
       let allocationResult = null;
