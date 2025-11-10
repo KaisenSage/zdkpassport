@@ -121,8 +121,7 @@ export class EmployeeRepository {
 
   // Backwards-compatible alias some callers expect
   async updateEmployeeZkFields(employeeId: number, ...args: any[]) {
-    // TypeScript requires a tuple type when spreading into a fixed-arity function.
-    // Avoid the spread by passing up to three args explicitly.
+    // Avoid spreading unknown array into fixed-arity function — extract up to 3 args
     const a1 = args.length > 0 ? args[0] : undefined;
     const a2 = args.length > 1 ? args[1] : undefined;
     const a3 = args.length > 2 ? args[2] : undefined;
@@ -130,19 +129,20 @@ export class EmployeeRepository {
   }
 
   // Funding tx operations used by reconciler & services
-  async insertFundingTx(employeeId: number, amount: number): Promise<FundingTx> {
+  // Accept optional txHash when creating the funding tx so callers can provide it if available.
+  async insertFundingTx(employeeId: number, amount: number, txHash?: string | null): Promise<FundingTx> {
     const res = await this.pool.query(
-      `INSERT INTO employee_funding_tx (employee_id, amount, status, attempt_count, created_at, updated_at)
-       VALUES ($1, $2, 'pending', 0, now(), now())
+      `INSERT INTO employee_funding_tx (employee_id, amount, tx_hash, status, attempt_count, created_at, updated_at)
+       VALUES ($1, $2, $3, 'pending', 0, now(), now())
        RETURNING *`,
-      [employeeId, amount]
+      [employeeId, amount, txHash ?? null]
     );
     return res.rows[0];
   }
 
   // Alias to satisfy callers expecting createFundingTx(...)
-  async createFundingTx(employeeId: number, amount: number): Promise<FundingTx> {
-    return this.insertFundingTx(employeeId, amount);
+  async createFundingTx(employeeId: number, amount: number, txHash?: string | null): Promise<FundingTx> {
+    return this.insertFundingTx(employeeId, amount, txHash);
   }
 
   async listPendingFundingTxs(limit = 100): Promise<FundingTx[]> {
