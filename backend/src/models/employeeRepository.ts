@@ -148,6 +148,32 @@ export class EmployeeRepository {
     return res.rows;
   }
 
+  /**
+   * Increment attempt_count on a funding tx.
+   * Accepts either an id or an object with .id and returns the updated funding_tx row.
+   */
+  async incrementFundingTxAttempt(idOrTx: any): Promise<FundingTx | null> {
+    let id: number;
+    if (idOrTx && typeof idOrTx === 'object' && typeof idOrTx.id !== 'undefined') {
+      id = Number(idOrTx.id);
+    } else {
+      id = Number(idOrTx);
+    }
+    if (!Number.isFinite(id) || Number.isNaN(id)) {
+      throw new Error('invalid funding tx id');
+    }
+
+    const res = await this.pool.query(
+      `UPDATE employee_funding_tx
+       SET attempt_count = COALESCE(attempt_count, 0) + 1,
+           updated_at = now()
+       WHERE id = $1
+       RETURNING *`,
+      [id]
+    );
+    return res.rows[0] ?? null;
+  }
+
   // Generic status updater (accepts id or funding-tx object)
   async markFundingTxStatus(idOrTx: any, status: string, txHash?: string | null) {
     // normalize id whether caller passed { id: ... } or an id
