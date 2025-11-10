@@ -121,7 +121,12 @@ export class EmployeeRepository {
 
   // Backwards-compatible alias some callers expect
   async updateEmployeeZkFields(employeeId: number, ...args: any[]) {
-    return this.updateEmployeeZkAccount(employeeId, ...args);
+    // TypeScript requires a tuple type when spreading into a fixed-arity function.
+    // Avoid the spread by passing up to three args explicitly.
+    const a1 = args.length > 0 ? args[0] : undefined;
+    const a2 = args.length > 1 ? args[1] : undefined;
+    const a3 = args.length > 2 ? args[2] : undefined;
+    return this.updateEmployeeZkAccount(employeeId, a1, a2, a3);
   }
 
   // Funding tx operations used by reconciler & services
