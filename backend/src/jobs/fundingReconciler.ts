@@ -1,57 +1,67 @@
-/**
- * Background reconciler for pending funding transactions.
- * Periodically fetches pending funding txs and checks their confirmation status via SDK.
- * If confirmed -> mark confirmed and increment employee allocated amount.
- * Retries up to maxAttempts then marks as failed.
- *
- * This is intended to run as a separate process or a scheduled job inside your app.
- */
+// backend/src/jobs/fundingReconciler.ts
+// Reconciler that picks up pending funding txs and attempts to submit / confirm them.
+// This version is defensive: repo.incrementFundingTxAttempt may return null, so we
+// read attempt_count from the returned row and handle nulls safely.
 
-import { EmployeeRepository } from '../models/employeeRepository';
-import { ZkSdk } from '../services/zkAccountService';
+import { EmployeeRepository, FundingTx } from '../models/employeeRepository';
 
-export async function startFundingReconciler(repo: EmployeeRepository, sdk: ZkSdk, intervalMs = 30_000) {
-  const maxAttempts = 5;
+const DEFAULT_MAX_ATTEMPTS = 5;
 
+export function startFundingReconciler(repo: EmployeeRepository, sdk: any, intervalMs = 30000, maxAttempts = DEFAULT_MAX_ATTEMPTS) {
   async function tick() {
     try {
-      const pending = await repo.listPendingFundingTxs(50);
+      const pending: FundingTx[] = await repo.listPendingFundingTxs(100);
+      if (!pending || pending.length === 0) return;
+
       for (const tx of pending) {
         try {
+          // If there's no tx_hash yet we can't check on-chain — increment attempt and skip.
           if (!tx.tx_hash) {
-            // cannot reconcile without tx_hash; skip or log
-            await repo.incrementFundingTxAttempt(tx.id);
+            const updated = await repo.incrementFundingTxAttempt(tx.id);
+            const attempts = updated?.attempt_count ?? 0;
+            console.log(`Funding tx ${tx.id} has no tx_hash; incremented attempts => ${attempts}`);
+            // if attempts reached threshold, mark failed
+            if (attempts >= maxAttempts) {
+              await repo.markFundingTxAsFailed(tx.id, null);
+              console.warn(`Funding tx ${tx.id} marked failed after ${attempts} attempts (no tx_hash)`);
+            }
             continue;
           }
 
-          // ask SDK whether tx is confirmed
-          const status = await sdk.waitForConfirm(tx.tx_hash, 10_000); // 10s
-          if (status.confirmed) {
-            // mark confirmed and increment allocated amount
-            await repo.incrementAllocatedAmount(tx.employee_id, Number(tx.amount));
-            await repo.markFundingTxAsConfirmed(tx.id, tx.tx_hash);
-            console.log(`Funding tx ${tx.id} confirmed (${tx.tx_hash})`);
-          } else {
-            const attempts = await repo.incrementFundingTxAttempt(tx.id);
+          // If tx_hash exists, ask SDK whether it's confirmed (adapter-specific)
+          const confirmed = await sdk.checkTxConfirmed(tx.tx_hash);
+          if (!confirmed) {
+            // increment attempts and read updated attempt_count safely
+            const updated = await repo.incrementFundingTxAttempt(tx.id);
+            const attempts = updated?.attempt_count ?? 0;
+
+            console.log(`Funding tx ${tx.id} is not confirmed yet; attempts=${attempts}`);
+
             if (attempts >= maxAttempts) {
-              await repo.markFundingTxAsFailed(tx.id, attempts);
+              await repo.markFundingTxAsFailed(tx.id, tx.tx_hash);
               console.warn(`Funding tx ${tx.id} marked failed after ${attempts} attempts`);
-            } else {
-              console.log(`Funding tx ${tx.id} not confirmed yet (attempt ${attempts})`);
             }
+            continue;
           }
+
+          // confirmed: record confirmation and update allocated amount on employee
+          await repo.markFundingTxAsConfirmed(tx.id, tx.tx_hash);
+          // increment the employee's allocated amount atomically
+          const newEmp = await repo.incrementAllocatedAmount(tx.employee_id, Number(tx.amount));
+          console.log(`Funding tx ${tx.id} confirmed. Employee ${tx.employee_id} allocation updated. new zk_allocated_amount=${newEmp?.zk_allocated_amount}`);
         } catch (innerErr) {
-          console.error('Error reconciling tx', tx.id, innerErr);
-          await repo.incrementFundingTxAttempt(tx.id);
+          console.error(`Error processing funding tx ${tx.id}:`, innerErr);
         }
       }
     } catch (err) {
       console.error('Funding reconciler error', err);
-    } finally {
-      setTimeout(tick, intervalMs);
     }
   }
 
-  // start first tick
-  tick();
+  // Run immediately, then on interval
+  tick().catch((e) => console.error('Initial reconciler tick failed', e));
+  const handle = setInterval(() => tick().catch((e) => console.error('Reconciler tick failed', e)), intervalMs);
+
+  // return a stop function for graceful shutdown/testing
+  return () => clearInterval(handle);
 }
