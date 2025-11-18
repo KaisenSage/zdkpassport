@@ -46,9 +46,10 @@ export class OnboardingController {
 
       const refreshed = await this.repo.getEmployeeById(employee.id);
       return res.json({ success: true, employee: refreshed, allocation: allocationResult });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('onboard error', err);
-      return res.status(500).json({ error: err.message || 'internal error' });
+      const msg = err instanceof Error ? err.message : String(err);
+      return res.status(500).json({ error: msg || 'internal error' });
     }
   }
 
@@ -65,9 +66,10 @@ export class OnboardingController {
 
       const result = await this.zk.allocateFromVault(id, employee.zk_account_id, Number(amount));
       return res.json({ success: true, result });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('allocate error', err);
-      return res.status(500).json({ error: err.message || 'internal error' });
+      const msg = err instanceof Error ? err.message : String(err);
+      return res.status(500).json({ error: msg || 'internal error' });
     }
   }
 }

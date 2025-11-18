@@ -7,7 +7,11 @@ import { EmployeeRepository, FundingTx } from '../models/employeeRepository';
 
 const DEFAULT_MAX_ATTEMPTS = 5;
 
-export function startFundingReconciler(repo: EmployeeRepository, sdk: any, intervalMs = 30000, maxAttempts = DEFAULT_MAX_ATTEMPTS) {
+type FundingSdk = {
+  checkTxConfirmed(txHash: string): Promise<boolean>;
+};
+
+export function startFundingReconciler(repo: EmployeeRepository, sdk: FundingSdk, intervalMs = 30000, maxAttempts = DEFAULT_MAX_ATTEMPTS) {
   async function tick() {
     try {
       const pending: FundingTx[] = await repo.listPendingFundingTxs(100);

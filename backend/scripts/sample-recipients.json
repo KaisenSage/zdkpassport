@@ -1,0 +1,4 @@
+[
+  { "employeeId": "emp1", "subaccountId": "sub-j3zyjrvkox", "amount": 100 },
+  { "employeeId": "emp2", "subaccountId": "sub-abc123", "amount": 200 }
+]

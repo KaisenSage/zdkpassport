@@ -16,10 +16,9 @@
  *   app.use('/api', onboardingRouter(controller));
  */
 
-import { Router } from 'express';
-import { OnboardingController } from '../controllers/onboardingController';
+import { Router, RequestHandler } from 'express';
 
-export function onboardingRouter(controller: OnboardingController) {
+export function onboardingRouter(controller: { onboard: RequestHandler; allocate: RequestHandler }) {
   const router = Router();
   router.post('/onboard', controller.onboard.bind(controller));
   router.post('/employees/:id/allocate', controller.allocate.bind(controller));

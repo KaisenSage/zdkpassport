@@ -1,0 +1,35 @@
+{
+  "_format": "hh3-sol-build-info-1",
+  "id": "solc-0_8_18-c8eafc70ed6ef8043789e23717619fcf1b8a6c72",
+  "solcVersion": "0.8.18",
+  "solcLongVersion": "0.8.18+commit.87f61d96",
+  "userSourceNameMap": {
+    "contracts/Anchor.sol": "project/contracts/Anchor.sol"
+  },
+  "input": {
+    "language": "Solidity",
+    "settings": {
+      "evmVersion": "paris",
+      "outputSelection": {
+        "*": {
+          "": [
+            "ast"
+          ],
+          "*": [
+            "abi",
+            "evm.bytecode",
+            "evm.deployedBytecode",
+            "evm.methodIdentifiers",
+            "metadata"
+          ]
+        }
+      },
+      "remappings": []
+    },
+    "sources": {
+      "project/contracts/Anchor.sol": {
+        "content": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.18;\n\ncontract Anchor {\n    event RunAnchored(bytes32 indexed runHash, address indexed sender, uint256 indexed timestamp);\n    mapping(address => bytes32) public lastAnchored;\n\n    function anchorRun(bytes32 runHash) external returns (bool) {\n        lastAnchored[msg.sender] = runHash;\n        emit RunAnchored(runHash, msg.sender, block.timestamp);\n        return true;\n    }\n}\n"
+      }
+    }
+  }
+}
