@@ -22,6 +22,18 @@
       "@/*": ["./*"]
     }
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  /*
+    IMPORTANT: narrow "include" to only the Next app source that should be compiled.
+    Replace app/, pages/, components/ with your actual frontend directories if different.
+  */
+  "include": [
+    "next-env.d.ts",
+    "app/**/*",
+    "pages/**/*",
+    "components/**/*",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": ["node_modules", "backend", "backend/**", "dist", ".next"]
 }
