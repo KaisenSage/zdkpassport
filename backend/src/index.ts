@@ -2,8 +2,11 @@ import express from "express";
 import helmet from "helmet";
 import cors from "cors";
 import dotenv from "dotenv";
+import cookieParser from "cookie-parser";
+
 import verificationRouter from "./routes/verification";
 import hrRouter from "./routes/hr";
+import authRouter from "./routes/auth"; // new auth router (implements /api/auth/*)
 
 dotenv.config();
 
@@ -12,12 +15,25 @@ const port = process.env.PORT || 4000;
 
 // Middlewares
 app.use(helmet());
-app.use(cors({ origin: process.env.ALLOWED_ORIGIN || true })); // tighten origin in production (set ALLOWED_ORIGIN)
+
+// Allow the frontend to send/receive cookies. Set ALLOWED_ORIGIN in .env in production.
+// cors origin:true will reflect the request origin which works with credentials:true.
+app.use(
+  cors({
+    origin: process.env.ALLOWED_ORIGIN || true,
+    credentials: true,
+  })
+);
+
 app.use(express.json({ limit: "1mb" }));
+app.use(cookieParser()); // parse cookies (required for session cookie middleware)
 
 // Routes already present
 app.use("/api/verify", verificationRouter);
 app.use("/api/hr", hrRouter);
+
+// Mount auth router (signup/login/logout)
+app.use("/api/auth", authRouter);
 
 // Week 3: attempt to mount batch payroll routes if they exist.
 // This keeps the existing file working if you haven't yet added the /routes/batch file.
